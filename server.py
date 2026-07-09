@@ -1525,7 +1525,61 @@ class Handler(BaseHTTPRequestHandler):
         return self.redirect("/admin?tab=%s&saved=1" % tab)
 
 
+# ---------------------------------------------------------------- backups
+
+BACKUP_KEEP = 10
+BACKUP_EVERY = 24 * 3600
+
+
+def backup_dir():
+    """Prefer a folder inside Google Drive (if Drive for desktop is installed),
+    else fall back to ~/CLTIBC-backups on this Mac."""
+    import glob
+    for drive in sorted(glob.glob(os.path.expanduser(
+            "~/Library/CloudStorage/GoogleDrive-*/My Drive"))):
+        return os.path.join(drive, "CLTIBC backups")
+    return os.path.expanduser("~/CLTIBC-backups")
+
+
+def run_backup():
+    import shutil
+    import tempfile
+    target = backup_dir()
+    os.makedirs(target, exist_ok=True)
+    stamp = time.strftime("%Y-%m-%d_%H%M")
+    with tempfile.TemporaryDirectory() as tmp:
+        staging = os.path.join(tmp, "cltibc-content")
+        os.makedirs(staging)
+        for src in (DATA_DIR, UPLOAD_DIR):
+            if os.path.isdir(src):
+                shutil.copytree(src, os.path.join(staging, os.path.basename(src)))
+        archive = shutil.make_archive(os.path.join(tmp, "cltibc-backup-" + stamp),
+                                      "zip", tmp, "cltibc-content")
+        final = os.path.join(target, os.path.basename(archive))
+        shutil.move(archive, final)
+    old = sorted(f for f in os.listdir(target)
+                 if f.startswith("cltibc-backup-") and f.endswith(".zip"))
+    for name in old[:-BACKUP_KEEP]:
+        os.remove(os.path.join(target, name))
+    return final
+
+
+def backup_loop():
+    while True:
+        try:
+            path = run_backup()
+            print("Backup saved: %s" % path)
+        except Exception as exc:
+            print("Backup failed: %s" % exc)
+        time.sleep(BACKUP_EVERY)
+
+
 def main():
+    import sys
+    if "--backup" in sys.argv:
+        print("Backup saved: %s" % run_backup())
+        return
+    threading.Thread(target=backup_loop, daemon=True).start()
     port = int(os.environ.get("PORT", "8452"))
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print("CLTIBC website running at http://localhost:%d  (admin: /admin)" % port)
