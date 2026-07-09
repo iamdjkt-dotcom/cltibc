@@ -49,7 +49,7 @@ BASE = """<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=13">
+<link rel="stylesheet" href="/static/style.css?v=14">
 <style>{{theme_css}}</style>
 </head>
 <body>
@@ -89,11 +89,11 @@ BASE = """<!doctype html>
     </div>
   </div>
   <div class="wrap footer-bottom">
-    <span>&copy; 2026 Centre for LexTax &amp; IBC, MNLU Mumbai.</span>
+    <span class="footer-copy">{{uni_footer}}&copy; 2026 Centre for LexTax &amp; IBC, MNLU Mumbai.</span>
     <span class="footer-motto">Research &middot; Training &middot; Policy</span>
   </div>
 </footer>
-<script src="/static/app.js?v=13" defer></script>
+<script src="/static/app.js?v=14" defer></script>
 </body>
 </html>"""
 
@@ -101,7 +101,7 @@ HOME = """
 <section class="hero">
   <div class="wrap hero-grid">
     <div class="hero-copy">
-      <span class="eyebrow eyebrow-light seq seq-1">{{hero_kicker}}</span>
+      <div class="hero-affil seq seq-1">{{uni_mark}}<span class="eyebrow eyebrow-light">{{hero_kicker}}</span></div>
       <h1 class="hero-title seq seq-2">{{hero_title}}</h1>
       <p class="hero-sub seq seq-3">{{hero_sub}}</p>
       <div class="hero-actions seq seq-4">

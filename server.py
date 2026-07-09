@@ -70,6 +70,7 @@ TEAM_CATEGORIES = ["Patrons & Advisors", "Faculty", "Student Editorial Board", "
 # Every piece of site copy is editable in Admin -> Site Content; these are the defaults.
 SITE_DEFAULTS = {
     "logo": "",
+    "uni_logo": "",
     "hero_kicker": "Maharashtra National Law University Mumbai",
     "hero_title": "Advancing Scholarship, Training, and Policy Discourse in Tax Law & Insolvency",
     "hero_sub": ("CLTIBC serves as a platform for interdisciplinary engagement by bringing together "
@@ -136,7 +137,7 @@ SITE_DEFAULTS = {
 def site():
     stored = _load("site.json", {})
     merged = dict(SITE_DEFAULTS)
-    merged.update({k: v for k, v in stored.items() if v or k == "logo"})
+    merged.update({k: v for k, v in stored.items() if v or k in ("logo", "uni_logo")})
     return merged
 
 
@@ -268,9 +269,14 @@ def page(title, content, active="", meta_desc="", og_image=""):
     social += '<a href="mailto:%s">Email</a>' % esc(s["contact_email"])
     favicon = ('<link rel="icon" type="image/png" href="/uploads/%s">' % esc(s["logo"])) \
         if s["logo"] else ""
+    brand_mark = ('<img class="brand-mark" src="/uploads/%s" alt="">' % esc(s["logo"])) \
+        if s["logo"] else T.MARK_SVG
+    uni_footer = ('<img class="uni-mark-footer" src="/uploads/%s" '
+                  'alt="Maharashtra National Law University Mumbai">' % esc(s["uni_logo"])) \
+        if s["uni_logo"] else ""
     return render(T.BASE, title=esc(title), nav=nav, content=content, meta=meta + favicon,
-                  theme_css=theme_css(s), social=social,
-                  brand_mark=T.MARK_SVG, footer_desc=esc(s["footer_desc"]))
+                  theme_css=theme_css(s), social=social, uni_footer=uni_footer,
+                  brand_mark=brand_mark, footer_desc=esc(s["footer_desc"]))
 
 
 def md_to_html(text):
@@ -492,7 +498,11 @@ def home_page():
     if articles:
         rows = "".join(card_html("journal", a) for a in articles)
         journal_latest = render(T.JOURNAL_LATEST_SECTION, articles=rows)
+    uni_mark = ('<img class="uni-mark" src="/uploads/%s" '
+                'alt="Maharashtra National Law University Mumbai">' % esc(s["uni_logo"])) \
+        if s["uni_logo"] else ""
     body = render(T.HOME, latest=latest, logo=logo, journal_latest=journal_latest,
+                  uni_mark=uni_mark,
                   hero_kicker=esc(s["hero_kicker"]), hero_title=esc(s["hero_title"]),
                   hero_sub=esc(s["hero_sub"]), about_lede=esc(s["about_lede"]),
                   card_journal=esc(s["card_journal"]), card_blog=esc(s["card_blog"]),
@@ -904,6 +914,8 @@ def panel_site(token, edit_id=None):
         if s["logo"] else '<p class="help-text">No logo uploaded yet — the built-in CLTIBC seal is shown.</p>'
     remove_logo = ('<label class="checkbox"><input type="checkbox" name="remove_logo"> '
                    'Remove uploaded logo and use the built-in seal</label>') if s["logo"] else ""
+    uni_preview = ('<img class="logo-preview" src="/uploads/%s" alt="Current university crest">'
+                   % esc(s["uni_logo"])) if s["uni_logo"] else ""
     return (
         '<div class="admin-panel"><h2>Site Content</h2>'
         '<p class="help-text">Everything on the public pages is edited here. Leave a field as-is to keep '
@@ -914,6 +926,8 @@ def panel_site(token, edit_id=None):
         '<h3 class="form-section">Logo</h3>%s'
         '<label>Upload Logo (PNG/JPG, square, transparent background works best)'
         '<input type="file" name="logo" accept="image/*"></label>%s'
+        '%s<label>University Crest (small mark shown beside the university name and in the footer)'
+        '<input type="file" name="uni_logo" accept="image/*"></label>'
 
         '<h3 class="form-section">Homepage Hero</h3>%s%s%s'
         '<h3 class="form-section">Homepage Cards</h3>%s%s%s'
@@ -928,7 +942,7 @@ def panel_site(token, edit_id=None):
         '<div class="color-row">%s%s%s%s</div>'
         '<button class="btn btn-primary" type="submit">Save Site Content</button></form></div>'
         '%s'
-        % (csrf_field(token), logo_preview, remove_logo,
+        % (csrf_field(token), logo_preview, remove_logo, uni_preview,
            field("Hero Badge Line", "hero_kicker"),
            field("Hero Headline", "hero_title", rows=3),
            field("Hero Paragraph", "hero_sub", rows=4),
@@ -1331,6 +1345,10 @@ class Handler(BaseHTTPRequestHandler):
                     stored["logo"] = saved
             elif "remove_logo" in fields:
                 stored["logo"] = ""
+            if files.get("uni_logo"):
+                saved = self.save_upload(*files["uni_logo"][0], IMAGE_EXTS)
+                if saved:
+                    stored["uni_logo"] = saved
             _save("site.json", stored)
             return self.redirect("/admin?tab=site&saved=1")
 
