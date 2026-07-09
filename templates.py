@@ -49,7 +49,7 @@ BASE = """<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=12">
+<link rel="stylesheet" href="/static/style.css?v=13">
 <style>{{theme_css}}</style>
 </head>
 <body>
@@ -93,7 +93,7 @@ BASE = """<!doctype html>
     <span class="footer-motto">Research &middot; Training &middot; Policy</span>
   </div>
 </footer>
-<script src="/static/app.js?v=12" defer></script>
+<script src="/static/app.js?v=13" defer></script>
 </body>
 </html>"""
 

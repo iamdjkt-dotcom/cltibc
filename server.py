@@ -266,7 +266,9 @@ def page(title, content, active="", meta_desc="", og_image=""):
     if s["social_instagram"]:
         social += '<a href="%s" target="_blank" rel="noopener">Instagram</a>' % esc(s["social_instagram"])
     social += '<a href="mailto:%s">Email</a>' % esc(s["contact_email"])
-    return render(T.BASE, title=esc(title), nav=nav, content=content, meta=meta,
+    favicon = ('<link rel="icon" type="image/png" href="/uploads/%s">' % esc(s["logo"])) \
+        if s["logo"] else ""
+    return render(T.BASE, title=esc(title), nav=nav, content=content, meta=meta + favicon,
                   theme_css=theme_css(s), social=social,
                   brand_mark=T.MARK_SVG, footer_desc=esc(s["footer_desc"]))
 
@@ -481,8 +483,8 @@ def home_page():
     if posts:
         latest = render(T.LATEST_SECTION, posts="".join(blog_item_html(p) for p in posts))
     if s["logo"]:
-        logo = ('<div class="logo-badge seq seq-2"><img src="/uploads/%s" '
-                'alt="Centre for LexTax and IBC logo"></div>' % esc(s["logo"]))
+        logo = ('<img class="seal-img seq seq-2" src="/uploads/%s" '
+                'alt="Centre for LexTax and IBC logo">' % esc(s["logo"]))
     else:
         logo = T.LOGO_SVG
     articles = published(_load("journal.json", []))[:2]

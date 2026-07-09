@@ -389,3 +389,7 @@ html.leaving main { opacity: 0; }
 .social-links a { color: #e2d5c0; font-family: var(--garamond); font-size: 15px; letter-spacing: .1em; text-transform: uppercase; }
 .social-links a:hover { color: var(--gold-pale); }
 @media (max-width: 700px) { .nav-edit-row { grid-template-columns: 1fr 80px; } .nav-edit-row .help-text { display: none; } }
+
+/* the real logo, background removed, sits directly on the hero */
+.seal-img { width: min(320px, 62vw); height: auto; filter: drop-shadow(0 18px 34px rgba(42, 56, 70, .28)); }
+@media (max-width: 900px) { .seal-img { width: min(210px, 54vw); } }
