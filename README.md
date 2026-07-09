@@ -52,11 +52,14 @@ admin portal's saved content. Use a host with a persistent disk.
 1. Create a free account at https://www.pythonanywhere.com (Beginner plan).
 2. Open a Bash console there and run:
    `git clone https://github.com/iamdjkt-dotcom/cltibc.git`
-3. Upload your latest `cltibc-backup-*.zip` (Files tab), then in the console:
+3. (Optional — carries over existing content.) Upload your latest
+   `cltibc-backup-*.zip` (Files tab), then in the console:
    `cd cltibc && unzip -o ~/cltibc-backup-*.zip && cp -r cltibc-content/data cltibc-content/uploads . && rm -r cltibc-content`
-   (This carries over your content AND your admin password.)
-4. Web tab → Add a new web app → Manual configuration → latest Python 3.
-5. Set "Source code" to `/home/<username>/cltibc`, then edit the WSGI
+   Backups intentionally do NOT contain the password — you set that in step 4.
+4. **Set the admin password on the server** (do this every fresh deploy):
+   `cd ~/cltibc && python3 server.py --set-password "your-chosen-password"`
+5. Web tab → Add a new web app → Manual configuration → latest Python 3.
+6. Set "Source code" to `/home/<username>/cltibc`, then edit the WSGI
    configuration file to exactly:
 
    ```python
@@ -66,11 +69,15 @@ admin portal's saved content. Use a host with a persistent disk.
    from wsgi import application
    ```
 
-6. Reload the web app. The site is live at `https://<username>.pythonanywhere.com`
-   with HTTPS already on; /admin uses your existing password.
-7. Set the public address in Admin → Site Content → "Public Site Address".
-8. To publish future code updates: `cd ~/cltibc && git pull`, then Reload.
+7. Reload the web app. The site is live at `https://<username>.pythonanywhere.com`
+   with HTTPS already on; sign in at /admin with the password from step 4.
+8. Set the public address in Admin → Site Content → "Public Site Address".
+9. To publish future code updates: `cd ~/cltibc && git pull`, then Reload.
    Content backups: download `data/` + `uploads/` from the Files tab.
+
+**Forgot the deployed password / "incorrect password"?** The password never
+travels in git or backups by design, so a fresh server has its own. Just run
+step 4 again on the host to set a known one, then Reload.
 
 ## Where things live
 

@@ -37,10 +37,40 @@ SESSION_HOURS = 12
 MAX_BODY = 30_000_000          # absolute request-size ceiling
 SECURE_MODE = os.environ.get("CLTIBC_SECURE") == "1"   # set to 1 behind HTTPS
 
-# login rate limiting: 5 failures locks an address out for 15 minutes
+# login rate limiting: 5 failures locks an address out for 3 minutes
 LOGIN_FAILS = {}
 LOGIN_LOCK = threading.Lock()
-MAX_FAILS, LOCKOUT_SECONDS = 5, 900
+MAX_FAILS, LOCKOUT_SECONDS = 5, 180   # 5 tries, then a 3-minute cooldown
+# set CLTIBC_TRUST_PROXY=1 only when a trusted reverse proxy sets X-Forwarded-For
+TRUST_PROXY = os.environ.get("CLTIBC_TRUST_PROXY") == "1"
+
+
+class RateLimiter:
+    """Simple fixed-window limiter: at most `limit` hits per `window` seconds
+    per key. Self-pruning so the table can't grow without bound."""
+
+    def __init__(self, limit, window):
+        self.limit, self.window = limit, window
+        self.hits = {}
+        self.lock = threading.Lock()
+
+    def allow(self, key):
+        now = time.time()
+        with self.lock:
+            if len(self.hits) > 4000:   # prune expired keys under pressure
+                self.hits = {k: v for k, v in self.hits.items()
+                             if v[1] > now - self.window}
+            count, start = self.hits.get(key, (0, now))
+            if now - start >= self.window:
+                count, start = 0, now
+            count += 1
+            self.hits[key] = (count, start)
+            return count <= self.limit
+
+
+CONTACT_LIMIT = RateLimiter(5, 3600)      # 5 messages/hour per IP
+LIKE_LIMIT = RateLimiter(30, 3600)        # 30 like toggles/hour per IP
+VIEW_LIMIT = RateLimiter(1, 21600)        # count 1 view per item per IP per 6h
 
 NAV_DEFAULTS = [("/", "Home", 10), ("/about", "About", 20), ("/journal", "Journal", 30),
                 ("/blog", "Blog", 40), ("/submissions", "Submissions", 50),
@@ -186,18 +216,39 @@ def hash_password(password, salt):
     return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 200_000).hex()
 
 
+# The signing secret lives OUTSIDE config.json in its own file, so it is never
+# swept into a content backup. A leaked backup therefore cannot be used to forge
+# admin sessions. rotate_secret() is called on every password change.
+SECRET_PATH = os.path.join(DATA_DIR, "secret.key")
+
+
+def load_secret():
+    if os.path.exists(SECRET_PATH):
+        with open(SECRET_PATH, "r", encoding="utf-8") as f:
+            val = f.read().strip()
+        if val:
+            return val
+    return rotate_secret()
+
+
+def rotate_secret():
+    val = secrets.token_hex(32)
+    fd = os.open(SECRET_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(val)
+    return val
+
+
 def load_config():
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            cfg = json.load(f)
+        cfg.pop("secret", None)   # migrate: never keep the secret in config.json
+        return cfg
     # first run: generate a random password instead of shipping a default
     password = secrets.token_urlsafe(10)
     salt = secrets.token_hex(16)
-    cfg = {
-        "secret": secrets.token_hex(32),
-        "salt": salt,
-        "password_hash": hash_password(password, salt),
-    }
+    cfg = {"salt": salt, "password_hash": hash_password(password, salt)}
     _save("config.json", cfg)
     print("=" * 60)
     print("  FIRST RUN — your admin password is:  %s" % password)
@@ -206,6 +257,7 @@ def load_config():
     return cfg
 
 
+SECRET = load_secret()
 CONFIG = load_config()
 
 
@@ -358,7 +410,7 @@ def new_id():
 
 def make_session_cookie():
     expiry = str(int(time.time()) + SESSION_HOURS * 3600)
-    sig = hmac.new(CONFIG["secret"].encode(), ("session:" + expiry).encode(), "sha256").hexdigest()
+    sig = hmac.new(SECRET.encode(), ("session:" + expiry).encode(), "sha256").hexdigest()
     return expiry + "." + sig
 
 
@@ -368,12 +420,12 @@ def session_valid(cookie_val):
     expiry, sig = cookie_val.split(".", 1)
     if not expiry.isdigit() or int(expiry) < time.time():
         return False
-    expected = hmac.new(CONFIG["secret"].encode(), ("session:" + expiry).encode(), "sha256").hexdigest()
+    expected = hmac.new(SECRET.encode(), ("session:" + expiry).encode(), "sha256").hexdigest()
     return hmac.compare_digest(sig, expected)
 
 
 def csrf_token(cookie_val):
-    return hmac.new(CONFIG["secret"].encode(), ("csrf:" + cookie_val).encode(), "sha256").hexdigest()
+    return hmac.new(SECRET.encode(), ("csrf:" + cookie_val).encode(), "sha256").hexdigest()
 
 
 # ---------------------------------------------------------------- public rendering
@@ -1133,6 +1185,28 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.parse_qs(raw, keep_blank_values=True)
         return {k: v[0] for k, v in parsed.items()}, {}
 
+    def client_ip(self):
+        """Real client IP. Only trusts X-Forwarded-For when explicitly told a
+        trusted proxy sits in front (CLTIBC_TRUST_PROXY=1); otherwise the
+        forwarded header is attacker-spoofable and must be ignored."""
+        if TRUST_PROXY:
+            xff = self.headers.get("X-Forwarded-For", "")
+            if xff:
+                return xff.split(",")[0].strip()
+        return self.client_address[0]
+
+    # magic-byte signatures so an upload's bytes must match its claimed type
+    _MAGIC = {
+        ".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",),
+        ".png": (b"\x89PNG\r\n\x1a\n",), ".gif": (b"GIF87a", b"GIF89a"),
+        ".webp": (b"RIFF",), ".pdf": (b"%PDF",),
+        ".docx": (b"PK\x03\x04", b"PK\x05\x06"),
+    }
+
+    def _content_matches(self, ext, content):
+        sigs = self._MAGIC.get(ext)
+        return sigs is None or any(content.startswith(s) for s in sigs)
+
     def save_upload(self, filename, content, allowed_exts):
         ext = os.path.splitext(filename)[1].lower()
         if ext not in allowed_exts or not content or len(content) > 25_000_000:
@@ -1236,7 +1310,7 @@ class Handler(BaseHTTPRequestHandler):
                 if "failed" in query:
                     flash = flash_box("Incorrect password.", error=True)
                 elif "locked" in query:
-                    flash = flash_box("Too many attempts. Try again in 15 minutes.", error=True)
+                    flash = flash_box("Too many attempts. Try again in 3 minutes.", error=True)
                 return self.respond(page("Admin Sign In", render(T.LOGIN, flash=flash)))
             token = csrf_token(self.session_cookie())
             tab = (query.get("tab") or ["blog"])[0]
@@ -1332,7 +1406,15 @@ class Handler(BaseHTTPRequestHandler):
             CONFIG["salt"] = secrets.token_hex(16)
             CONFIG["password_hash"] = hash_password(new1, CONFIG["salt"])
             _save("config.json", CONFIG)
-            return self.redirect("/admin?tab=settings&saved=1")
+            # rotate the signing secret so any previously-issued (or stolen)
+            # session cookie is instantly invalidated by the password change.
+            global SECRET
+            SECRET = rotate_secret()
+            new_cookie = make_session_cookie()   # keep THIS browser signed in
+            secure = "; Secure" if SECURE_MODE else ""
+            return self.redirect("/admin?tab=settings&saved=1", extra_headers=[
+                ("Set-Cookie", "cltibc_session=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s"
+                 % (new_cookie, SESSION_HOURS * 3600, secure))])
 
         if path == "/admin/site/save":
             stored = _load("site.json", {})
@@ -1570,9 +1652,12 @@ def run_backup():
     with tempfile.TemporaryDirectory() as tmp:
         staging = os.path.join(tmp, "cltibc-content")
         os.makedirs(staging)
+        # credentials are excluded — a backup should never be able to authenticate.
+        secrets_out = shutil.ignore_patterns("secret.key", "config.json", "*.tmp")
         for src in (DATA_DIR, UPLOAD_DIR):
             if os.path.isdir(src):
-                shutil.copytree(src, os.path.join(staging, os.path.basename(src)))
+                shutil.copytree(src, os.path.join(staging, os.path.basename(src)),
+                                ignore=secrets_out)
         archive = shutil.make_archive(os.path.join(tmp, "cltibc-backup-" + stamp),
                                       "zip", tmp, "cltibc-content")
         final = os.path.join(target, os.path.basename(archive))
@@ -1594,10 +1679,29 @@ def backup_loop():
         time.sleep(BACKUP_EVERY)
 
 
+def set_password(new):
+    if len(new) < 8:
+        print("Password must be at least 8 characters.")
+        return
+    CONFIG["salt"] = secrets.token_hex(16)
+    CONFIG["password_hash"] = hash_password(new, CONFIG["salt"])
+    _save("config.json", CONFIG)
+    rotate_secret()   # invalidate any old sessions
+    print("Admin password updated. Sign in with the new password.")
+
+
 def main():
     import sys
     if "--backup" in sys.argv:
         print("Backup saved: %s" % run_backup())
+        return
+    if "--set-password" in sys.argv:
+        i = sys.argv.index("--set-password")
+        if i + 1 < len(sys.argv):
+            set_password(sys.argv[i + 1])
+        else:
+            import getpass
+            set_password(getpass.getpass("New admin password: "))
         return
     threading.Thread(target=backup_loop, daemon=True).start()
     port = int(os.environ.get("PORT", "8452"))
