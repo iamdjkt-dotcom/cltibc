@@ -44,15 +44,33 @@ Blog posts and journal papers show **live view counts** (per open) and a
 - Errors never leak stack traces — they log privately to `data/error.log`.
 - `data/` and `uploads/` are `.gitignore`d (secrets never enter version control).
 
-## Deployment (when going public)
+## Deployment — PythonAnywhere (recommended, free)
 
-1. Copy the whole folder to a Python host (PythonAnywhere, Render, a small VPS).
-2. Put it behind HTTPS (the host usually provides this).
-3. Run with `CLTIBC_SECURE=1 python3 server.py` — this turns on the `Secure`
-   cookie flag and HSTS. **Never expose /admin over plain HTTP.**
-4. Set your public address in Admin → Site Content → "Public Site Address"
-   so link previews (OG tags) work.
-5. Back up `data/` + `uploads/` — that's 100% of the site's content.
+Vercel/Netlify will NOT work: they wipe the filesystem, which destroys the
+admin portal's saved content. Use a host with a persistent disk.
+
+1. Create a free account at https://www.pythonanywhere.com (Beginner plan).
+2. Open a Bash console there and run:
+   `git clone https://github.com/iamdjkt-dotcom/cltibc.git`
+3. Upload your latest `cltibc-backup-*.zip` (Files tab), then in the console:
+   `cd cltibc && unzip -o ~/cltibc-backup-*.zip && cp -r cltibc-content/data cltibc-content/uploads . && rm -r cltibc-content`
+   (This carries over your content AND your admin password.)
+4. Web tab → Add a new web app → Manual configuration → latest Python 3.
+5. Set "Source code" to `/home/<username>/cltibc`, then edit the WSGI
+   configuration file to exactly:
+
+   ```python
+   import os, sys
+   os.environ["CLTIBC_SECURE"] = "1"
+   sys.path.insert(0, "/home/<username>/cltibc")
+   from wsgi import application
+   ```
+
+6. Reload the web app. The site is live at `https://<username>.pythonanywhere.com`
+   with HTTPS already on; /admin uses your existing password.
+7. Set the public address in Admin → Site Content → "Public Site Address".
+8. To publish future code updates: `cd ~/cltibc && git pull`, then Reload.
+   Content backups: download `data/` + `uploads/` from the Files tab.
 
 ## Where things live
 
